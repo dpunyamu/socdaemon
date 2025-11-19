@@ -1,0 +1,27 @@
+#include "SysfsMonitor.h"
+#include <android/log.h>
+
+class gpuRc6Monitor : public SysfsMonitor {
+public:
+    gpuRc6Monitor(int pollTimeoutMs = 1000)
+        : SysfsMonitor("GpuRc6ResidencyMonitor",
+                      "/sys/class/drm/card0/device/tile0/gt0/gtidle/idle_residency_ms",
+                      pollTimeoutMs) {}
+
+protected:
+    void onValueChanged(const std::string& previous_value, const std::string& current_value) override {
+        // Log the change or add custom logic here
+        ALOGI("SoCDaemon GpuRc6Monitor", "RC6 residency changed from %s to %s", previous_value.c_str(), current_value.c_str());
+        unsigned long long prev = 0, curr = 0, delta = 0;
+        try {
+            prev = std::stoull(previous_value);
+            curr = std::stoull(current_value);
+            delta = (curr > prev) ? (curr - prev) : 0;
+            delta_percent = (prev > 0) ? ((delta * 100) / prev) : 0;
+        } catch (const std::exception& e) {
+            ALOGE("SoCDaemon GpuRc6Monitor", "Error converting RC6 residency values: %s", e.what());
+            return;
+        }
+        ALOGI("SoCDaemon GpuRc6Monitor", "RC6 residency delta: %llu", delta_percent);
+    }
+};

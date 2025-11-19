@@ -1,0 +1,10 @@
+#pragma once
+#include "SysfsMonitor.h"
+#include <string>
+
+class gpuRc6Monitor : public SysfsMonitor {
+public:
+    gpuRc6Monitor(int pollTimeoutMs = 1000);
+protected:
+    void onValueChanged(const std::string& previous_value, const std::string& current_value) override;
+};

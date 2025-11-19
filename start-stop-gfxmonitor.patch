@@ -1,0 +1,86 @@
+diff --git a/desktop-services/socdaemon/GpuRc6Monitor.cpp b/desktop-services/socdaemon/GpuRc6Monitor.cpp
+index d5f6ec876..b0caef30d 100644
+--- a/desktop-services/socdaemon/GpuRc6Monitor.cpp
++++ b/desktop-services/socdaemon/GpuRc6Monitor.cpp
+@@ -1,3 +1,6 @@
++void GpuRc6Monitor::stop() {
++    running_.store(false);
++}
+ // -----------------------------------------------------------------------------
+ // GpuRc6Monitor.cpp
+ //
+@@ -118,8 +121,9 @@ void GpuRc6Monitor::monitorLoop()
+ 
+      GPULOGD("GpuRc6Monitor: Initial value of '%s' is '%s'", sysfs_path_.c_str(), current_value.c_str());
+ 
+-     // Polling loop to monitor for changes
+-     while (true) {
++    running_.store(true);
++    // Polling loop to monitor for changes
++    while (running_.load()) {
+           fd = open(sysfs_path_.c_str(), O_RDONLY);
+           if (fd < 0) {
+               GPULOGE("GpuRc6Monitor: Could not open '%s' for reading: %s",
+diff --git a/desktop-services/socdaemon/GpuRc6Monitor.h b/desktop-services/socdaemon/GpuRc6Monitor.h
+index 6759242c6..41bb07556 100644
+--- a/desktop-services/socdaemon/GpuRc6Monitor.h
++++ b/desktop-services/socdaemon/GpuRc6Monitor.h
+@@ -25,10 +25,12 @@ public:
+     void onValueChanged(int previous_value, int current_value) override;
+     void monitorLoop() override;
+     int init();
++    void stop();
+ 
+ private:
+     std::string sysfs_path_;
+     int poll_timeout_ms_;
+     static constexpr size_t kSysfsReadBufferSize = 32;
+-    static constexpr int kGpuHighLoadPercent = 40;
++    static constexpr int kGpuHighLoadPercent = 40; // Example threshold percentage
++    std::atomic<bool> running_{true};
+ };
+diff --git a/desktop-services/socdaemon/SocDaemon.cpp b/desktop-services/socdaemon/SocDaemon.cpp
+index a7d1b632a..4f0211a37 100644
+--- a/desktop-services/socdaemon/SocDaemon.cpp
++++ b/desktop-services/socdaemon/SocDaemon.cpp
+@@ -249,6 +249,26 @@ void SocDaemon::handleChangeAlert(const std::string& name, int oldValue, int new
+                 WltType newWLT = static_cast<WltType>(newValue & 0x3);
+                 WltType oldWLT = static_cast<WltType>(oldValue & 0x3);
+ 
++                // Start/stop GPU monitor thread based on WLT
++                if (newWLT == WltType::Sustain || newWLT == WltType::Bursty) {
++                    if (!gpuMonitorThreadRunning_ && gpuRc6MonitorPtr_) {
++                        gpuRc6MonitorPtr_->running_.store(true);
++                        if (pthread_create(&gpuMonitorThread_, NULL, SocDaemon::monitorSysfsWrapper, gpuRc6MonitorPtr_) == 0) {
++                            gpuMonitorThreadRunning_ = true;
++                            ALOGI("SocDaemon: Started GpuRc6Monitor thread for WLT Sustain/Bursty");
++                        } else {
++                            ALOGE("SocDaemon: Failed to start GpuRc6Monitor thread: %s", std::strerror(errno));
++                        }
++                    }
++                } else {
++                    // Idle/Btl: stop GPU monitor thread if running
++                    if (gpuMonitorThreadRunning_ && gpuRc6MonitorPtr_) {
++                        gpuRc6MonitorPtr_->stop();
++                        gpuMonitorThreadRunning_ = false;
++                        ALOGI("SocDaemon: Stopped GpuRc6Monitor thread for WLT Idle/Btl");
++                    }
++                }
++
+                 if (CCGlobalState_.load() == CCGlobalState::CoreContainment) {
+                     // We're in CoreContainment
+ 
+diff --git a/desktop-services/socdaemon/SocDaemon.h b/desktop-services/socdaemon/SocDaemon.h
+index 5607f12f5..1e1369e5c 100644
+--- a/desktop-services/socdaemon/SocDaemon.h
++++ b/desktop-services/socdaemon/SocDaemon.h
+@@ -76,6 +76,9 @@ private:
+     // Monitors and their threads
+     std::vector<std::unique_ptr<HintMonitor>> monitors_;
+     SysLoadMonitor* sysLoadMonitorPtr_ = nullptr; // non-owning
++    GpuRc6Monitor* gpuRc6MonitorPtr_ = nullptr; // non-owning
++    pthread_t gpuMonitorThread_ = 0;
++    bool gpuMonitorThreadRunning_ = false;
+     std::vector<pthread_t> threads_;
+ 
+     // Configuration/state

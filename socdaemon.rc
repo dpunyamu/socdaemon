@@ -1,0 +1,24 @@
+service vendor.socdaemon /vendor/bin/socdaemon --sendHint true --socHint wlt --notification-delay 128
+    class main 
+    user root
+    group system
+    disabled
+    oneshot
+
+on property:vendor.powerhal.config=power/powerhint_204.json &&  property:vendor.powerhal.init=1
+    start vendor.socdaemon
+
+on property:vendor.powerhal.config=power/powerhint_404.json &&  property:vendor.powerhal.init=1
+    start vendor.socdaemon
+
+on property:vendor.powerhal.config=power/powerhint_484.json &&  property:vendor.powerhal.init=1
+    start vendor.socdaemon
+
+on property:vendor.powerhal.config=power/powerhint_204_OOB.json &&  property:vendor.powerhal.init=1
+    stop vendor.socdaemon
+
+on property:vendor.powerhal.config=power/powerhint_404_OOB.json &&  property:vendor.powerhal.init=1
+    stop vendor.socdaemon
+
+on property:vendor.powerhal.config=power/powerhint_484_OOB.json &&  property:vendor.powerhal.init=1
+    stop vendor.socdaemon
