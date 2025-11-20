@@ -251,12 +251,10 @@ void SocDaemon::handleChangeAlert(const std::string& name, int oldValue, int new
             if (socHint_ == "wlt") {
                 WltType newWLT = static_cast<WltType>(newValue & 0x3);
                 WltType oldWLT = static_cast<WltType>(oldValue & 0x3);
-                ALOGD("DEEPIKA SocDaemon: Old WLT=%d, New WLT=%d", oldWLT, newWLT);
-                // Continue GPU monitoring for Sustain/Bursty, pause only for Idle/Btl
+                /* // Continue GPU monitoring for Sustain/Bursty, pause only for Idle/Btl
                 if ((oldWLT == WltType::Idle || oldWLT == WltType::Btl) &&
                     (newWLT == WltType::Sustain || newWLT == WltType::Bursty)) {
                         ALOGD("DEEPIKA SocDaemon: WLT changed from IDLE/BTL to SUSTAIN/BURSTY");
-                        ALOGD("DEEPIKA SocDaemon: gpuMonitorThreadRunning_=%d gpuRc6MonitorPtr_=%p", gpuMonitorThreadRunning_, gpuRc6MonitorPtr_);
                     if (!gpuMonitorThreadRunning_ && gpuRc6MonitorPtr_) {
                         // Start thread if not running
                         ALOGD("DEEPIKA SocDaemon: Starting GpuRc6Monitor thread for WLT Sustain/Bursty");
@@ -280,7 +278,7 @@ void SocDaemon::handleChangeAlert(const std::string& name, int oldValue, int new
                         gpuRc6MonitorPtr_->pause();
                         ALOGI("SocDaemon: Paused GpuRc6Monitor polling for WLT Idle/Btl");
                     }
-                }
+                } */
                 
 
                 if (CCGlobalState_.load() == CCGlobalState::CoreContainment) {
@@ -290,6 +288,22 @@ void SocDaemon::handleChangeAlert(const std::string& name, int oldValue, int new
                         (newWLT == WltType::Sustain || newWLT == WltType::Bursty)) {
                         ALOGI("SocDaemon: CC : WLT changed from IDLE/BTL to SUSTAIN/BURSTY. Resetting latestSysCpuLoadCC_");
                         latestSysCpuLoadCC_ = getLatestSysCpuLoad();
+                        if (!gpuMonitorThreadRunning_ && gpuRc6MonitorPtr_) {
+                        // Start thread if not running
+                            if (pthread_create(&gpuMonitorThread_, NULL, SocDaemon::monitorSysfsWrapper, gpuRc6MonitorPtr_) == 0) {
+                                gpuMonitorThreadRunning_ = true;
+                                ALOGI("DEEPIKA SocDaemon: Started GpuRc6Monitor thread for WLT Sustain/Bursty");
+                                // Always resume after thread start in case monitor was paused
+                                gpuRc6MonitorPtr_->resume();
+                                ALOGI("DEEPIKA SocDaemon: Resumed GpuRc6Monitor polling for WLT Sustain/Bursty (after thread start)");
+                            } else {
+                                ALOGE("DEEPIKA SocDaemon: Failed to start GpuRc6Monitor thread: %s", std::strerror(errno));
+                            }
+                        } else if (gpuMonitorThreadRunning_ && gpuRc6MonitorPtr_) {
+                        // Resume polling if thread is already running
+                        gpuRc6MonitorPtr_->resume();
+                        ALOGI("DEEPIKA SocDaemon: Resumed GpuRc6Monitor polling for WLT Sustain/Bursty");
+                        }
                     }
 
                     // Update the sysLoad value.
@@ -299,6 +313,10 @@ void SocDaemon::handleChangeAlert(const std::string& name, int oldValue, int new
                         case WltType::Idle:
                         case WltType::Btl:
                             // Idle/BTL -> ensure exit debounce is stopped
+                            if (gpuMonitorThreadRunning_ && gpuRc6MonitorPtr_) {
+                                gpuRc6MonitorPtr_->pause();
+                                ALOGI("SocDaemon: Paused GpuRc6Monitor polling for WLT Idle/Btl");
+                                }
                             if (isCCExitDebounceTimerRunning()) {
                                 ALOGI("SocDaemon: CC_ExitDT : WLT_IDLE/BTL. Cancel ExitDebounceTimer");
                                 stopCCExitDebounceTimer();
@@ -311,6 +329,10 @@ void SocDaemon::handleChangeAlert(const std::string& name, int oldValue, int new
                             if (!isCCExitDebounceTimerRunning()) {
                                 ALOGI("SocDaemon: CC : WLT_SUSTAIN/BURSTY. Start ExitDebounceTimer");
                                 startCCExitDebounceTimer();
+                            }
+                            if (gpuMonitorThreadRunning_ && gpuRc6MonitorPtr_) {
+                                gpuRc6MonitorPtr_->resume();
+                                ALOGI("SocDaemon: Resumed GpuRc6Monitor polling for WLT Sustain/Bursty");
                             }
                             break;
                         default:
@@ -330,6 +352,10 @@ void SocDaemon::handleChangeAlert(const std::string& name, int oldValue, int new
                             } else {
                                 ALOGI("SocDaemon: Open : WLT_IDLE/BTL : EntryDebounceTimer already running or not in Open");
                             }
+                            if (gpuMonitorThreadRunning_ && gpuRc6MonitorPtr_) {
+                                gpuRc6MonitorPtr_->pause();
+                                ALOGI("SocDaemon: Paused GpuRc6Monitor polling for WLT Idle/Btl");
+                            }
                             break;
                         case WltType::Sustain:
                             if (isCCEntryDebounceTimerRunning()) {
@@ -337,6 +363,10 @@ void SocDaemon::handleChangeAlert(const std::string& name, int oldValue, int new
                                 stopCCEntryDebounceTimer();
                             } else {
                                 ALOGI("SocDaemon: Open : WLT_SUSTAIN : No EntryDebounceTimer running");
+                            }
+                            if (gpuMonitorThreadRunning_ && gpuRc6MonitorPtr_) {
+                                gpuRc6MonitorPtr_->resume();
+                                ALOGI("SocDaemon: Resumed GpuRc6Monitor polling for WLT Sustain/Bursty");
                             }
                             break;
                         case WltType::Bursty:
@@ -375,15 +405,15 @@ void SocDaemon::handleChangeAlert(const std::string& name, int oldValue, int new
             }
         }
 
-        // if (name == "GpuRc6Monitor") {
-        //     // GpuRc6Monitor change alert: newValue is the gfxMode (0=normal, 1=high load)
-        //     //ALOGI("SocDaemon: GpuRc6Monitor ALERT: GfxMode changed to %d", newValue);
-        //     if (newValue == 1) {
-        //         ALOGI("SocDaemon: GpuRc6Monitor ALERT: GfxMode changed to %d, High GPU load detected", newValue);
-        //     } else {
-        //         ALOGI("SocDaemon: GpuRc6Monitor ALERT: GfxMode changed to %d, Low GPU load detected", newValue);
-        //     }
-        // }
+        if (name == "GpuRc6Monitor") {
+            // GpuRc6Monitor change alert: newValue is the gfxMode (0=normal, 1=high load)
+            //ALOGI("SocDaemon: GpuRc6Monitor ALERT: GfxMode changed to %d", newValue);
+            if (newValue == 1) {
+                ALOGI("SocDaemon: GpuRc6Monitor ALERT: GfxMode changed to %d, High GPU load detected", newValue);
+            } else {
+                ALOGI("SocDaemon: GpuRc6Monitor ALERT: GfxMode changed to %d, Low GPU load detected", newValue);
+            }
+        }
     }
 
 double SocDaemon::getSysCpuLoad() const noexcept {
