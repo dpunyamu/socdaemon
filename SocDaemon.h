@@ -30,7 +30,7 @@ inline constexpr char kLogTag[] = "SocDaemon";
 class SocDaemon {
 public:
     // Constructor / main entry
-    SocDaemon(bool sendHint, const std::string& socHint, int notificationDelay) noexcept;
+    SocDaemon(bool sendHint, bool sendGfxHint, const std::string& socHint, int notificationDelay) noexcept;
     ~SocDaemon() = default;
 
     // Start monitoring; may spawn threads.
@@ -65,6 +65,7 @@ private:
     double getSysCpuLoad() const noexcept;
     double getLatestSysCpuLoad() const noexcept;
     void sendHintIfAllowed(int value, const char* reason);
+    void sendGfxHintIfAllowed(int gfxMode, const char* reason);
 
     // Static wrapper for pthreads
     static void* monitorSysfsWrapper(void* arg) noexcept;
@@ -84,9 +85,12 @@ private:
 
     // Configuration/state
     bool sendHint_;
+    bool sendGfxHint_;
     std::string socHint_;
     int notificationDelay_;
     bool efficientMode_ = false;
+    bool gfxMode_ = false;
+    
 
     // Global state for the daemon: Open (normal monitoring) or CoreContainment (consolidated)
     std::atomic<CCGlobalState> CCGlobalState_{CCGlobalState::Open};

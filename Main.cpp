@@ -14,6 +14,7 @@
 int main(int argc, char* argv[]) {
 
     bool sendHint = false;
+    bool sendGfxHint = false;
     std::string socHint;
     int notificationDelay = -1; // Default: not set
 
@@ -38,6 +39,24 @@ int main(int argc, char* argv[]) {
                 std::cout << "--sendHint requires a value (true or false)" << std::endl;
                 exit(1);
             }
+        } else if (arg == "--sendGfxHint") {
+            if (i + 1 < argc) {
+                std::string value = argv[i + 1];
+                if (value == "true") {
+                    sendGfxHint = true;
+                    ALOGI("--sendGfxHint set to true");
+                } else if (value == "false") {
+                    sendGfxHint = false;
+                    ALOGI("--sendGfxHint set to false");
+                } else {
+                    std::cout << "Invalid value for --sendGfxHint: " << value << ". Use true or false." << std::endl;
+                    exit(1);
+                }
+                ++i; // Skip the value
+            } else {
+                std::cout << "--sendGfxHint requires a value (true or false)" << std::endl;
+                exit(1);
+            } 
         } else if (arg == "--socHint") {
             if (i + 1 < argc) {
                 socHint = argv[i + 1];
@@ -74,14 +93,15 @@ int main(int argc, char* argv[]) {
                 exit(1);
             }
         } else if (arg == "--help" || arg == "-h") {
-            std::cout << "Usage: " << argv[0] << " [--sendHint <true|false>] [--sochint <wlt|swlt|hfi>] [--notification-delay <ms>] [--help]\n";
+            std::cout << "Usage: " << argv[0] << " [--sendHint <true|false>] [--sendGfxHint <true|false>] [--sochint <wlt|swlt|hfi>] [--notification-delay <ms>] [--help]\n";
             std::cout << "  --sendHint <true|false>         : Specify whether to send power hints to PowerHal (default: false)\n";
+            std::cout << "  --sendGfxHint <true|false>      : Specify whether to send GFX power hints (default: false)\n";
             std::cout << "  --sochint <value>               : Set SoC hint type. Allowed values: wlt, swlt, hfi\n";
             std::cout << "  --notification-delay <ms>       : Notification delay in milliseconds (only valid with wlt or swlt)\n";
             std::cout << "  --help, -h                      : Show this help message\n";
             exit(1);
         } else {
-            std::cout << "Usage: " << argv[0] << " [--sendHint <true|false>] [--sochint <wlt|swlt|hfi>] [--notification-delay <ms>] [--help]\n";
+            std::cout << "Usage: " << argv[0] << " [--sendHint <true|false>] [--sendGfxHint <true|false>] [--sochint <wlt|swlt|hfi>] [--notification-delay <ms>] [--help]\n";
             exit(1);
         }
     }
@@ -97,7 +117,7 @@ int main(int argc, char* argv[]) {
         ALOGI("--sochint not given, defaulting to %s", socHint.c_str());
     }
 
-    SocDaemon daemon(sendHint, socHint, notificationDelay);
+    SocDaemon daemon(sendHint, sendGfxHint, socHint, notificationDelay);
     daemon.start();
     return 0;
 }

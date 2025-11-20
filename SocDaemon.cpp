@@ -1,27 +1,14 @@
 #include "SocDaemon.h"
 #include "GpuRc6Monitor.h"
 
-SocDaemon::SocDaemon(bool sendHint, const std::string& socHint, int notificationDelay) noexcept
-    : sendHint_(sendHint), socHint_(socHint), notificationDelay_(notificationDelay) {
+SocDaemon::SocDaemon(bool sendHint, bool sendGfxHint, const std::string& socHint, int notificationDelay) noexcept
+    : sendHint_(sendHint), sendGfxHint_(sendGfxHint), socHint_(socHint), notificationDelay_(notificationDelay) {
     startDebounceThreadOnce();
 }
 
 void SocDaemon::start() {
     ALOGI("SocDaemon: V0.89 Main daemon process starting...");
-    auto gpuMonitorPtr = std::make_unique<GpuRc6Monitor>(
-        "GpuRc6Monitor",
-        "/sys/class/drm/card0/device/tile0/gt0/gtidle/idle_residency_ms",
-        1000 // poll timeout in ms
-    );
     
-    gpuMonitorPtr->pause(); // Start in paused state for WLT Idle/Btl
-    if (gpuMonitorPtr->init() < 0) {
-            ALOGE("SocDaemon: GpuRc6Monitor initialization failed, not adding to monitors_.");
-        } else {
-            monitors_.push_back(std::move(gpuMonitorPtr));
-            gpuRc6MonitorPtr_ = static_cast<GpuRc6Monitor*>(monitors_.back().get()); // non-owning pointer
-        }
-
     if (!socHint_.empty()) {
         ALOGI("SocDaemon: socHint is set to %s", socHint_.c_str());
     }
@@ -49,6 +36,21 @@ void SocDaemon::start() {
             monitors_.push_back(std::move(hfiMonitorPtr));
         }
     }
+
+    auto gpuMonitorPtr = std::make_unique<GpuRc6Monitor>(
+        "GpuRc6Monitor",
+        "/sys/class/drm/card0/device/tile0/gt0/gtidle/idle_residency_ms",
+        1000 // poll timeout in ms
+    );
+    
+    gpuMonitorPtr->pause(); // Start in paused state for WLT Idle/Btl
+    if (gpuMonitorPtr->init() < 0) {
+            ALOGE("SocDaemon: GpuRc6Monitor initialization failed, not adding to monitors_.");
+        } else {
+            monitors_.push_back(std::move(gpuMonitorPtr));
+            gpuRc6MonitorPtr_ = static_cast<GpuRc6Monitor*>(monitors_.back().get()); // non-owning pointer
+        }
+
 
     // Add SysLoadMonitor
     auto localSysLoad = std::make_unique<SysLoadMonitor>("SysLoadMonitor");
@@ -410,8 +412,10 @@ void SocDaemon::handleChangeAlert(const std::string& name, int oldValue, int new
             //ALOGI("SocDaemon: GpuRc6Monitor ALERT: GfxMode changed to %d", newValue);
             if (newValue == 1) {
                 ALOGI("SocDaemon: GpuRc6Monitor ALERT: GfxMode changed to %d, High GPU load detected", newValue);
+                sendGfxHintIfAllowed(1, "High GPU load detected");
             } else {
                 ALOGI("SocDaemon: GpuRc6Monitor ALERT: GfxMode changed to %d, Low GPU load detected", newValue);
+                sendGfxHintIfAllowed(0, "Low GPU load detected");
             }
         }
     }
@@ -449,6 +453,20 @@ void SocDaemon::sendHintIfAllowed(int value, const char* reason) {
             }
         } else {
             ALOGD("SocDaemon: Hint value unchanged (%d), not sending: %s", value, reason);
+    }
+}
+
+void SocDaemon::sendGfxHintIfAllowed(int value, const char* reason) {
+    if (value != gfxMode_) {
+        if (sendGfxHint_) {
+            hintManager.sendHint("GFX_MODE", value);
+                ALOGI("SocDaemon: Send GFX_MODE: %d due to %s", value, reason);
+            } else {
+                ALOGI("SocDaemon: %s but not sending due to sendGfxHint=false", reason);
+            }
+            gfxMode_ = value;
+        } else {
+            ALOGD("SocDaemon: GFX Hint value unchanged (%d), not sending: %s", value, reason);
     }
 }
 
