@@ -253,36 +253,6 @@ void SocDaemon::handleChangeAlert(const std::string& name, int oldValue, int new
             if (socHint_ == "wlt") {
                 WltType newWLT = static_cast<WltType>(newValue & 0x3);
                 WltType oldWLT = static_cast<WltType>(oldValue & 0x3);
-                /* // Continue GPU monitoring for Sustain/Bursty, pause only for Idle/Btl
-                if ((oldWLT == WltType::Idle || oldWLT == WltType::Btl) &&
-                    (newWLT == WltType::Sustain || newWLT == WltType::Bursty)) {
-                        ALOGD("DEEPIKA SocDaemon: WLT changed from IDLE/BTL to SUSTAIN/BURSTY");
-                    if (!gpuMonitorThreadRunning_ && gpuRc6MonitorPtr_) {
-                        // Start thread if not running
-                        ALOGD("DEEPIKA SocDaemon: Starting GpuRc6Monitor thread for WLT Sustain/Bursty");
-                        if (pthread_create(&gpuMonitorThread_, NULL, SocDaemon::monitorSysfsWrapper, gpuRc6MonitorPtr_) == 0) {
-                            gpuMonitorThreadRunning_ = true;
-                            ALOGI("DEEPIKA SocDaemon: Started GpuRc6Monitor thread for WLT Sustain/Bursty");
-                            // Always resume after thread start in case monitor was paused
-                            gpuRc6MonitorPtr_->resume();
-                            ALOGI("DEEPIKA SocDaemon: Resumed GpuRc6Monitor polling for WLT Sustain/Bursty (after thread start)");
-                        } else {
-                            ALOGE("DEEPIKA SocDaemon: Failed to start GpuRc6Monitor thread: %s", std::strerror(errno));
-                        }
-                    } else if (gpuMonitorThreadRunning_ && gpuRc6MonitorPtr_) {
-                        // Resume polling if thread is already running
-                        gpuRc6MonitorPtr_->resume();
-                        ALOGI("DEEPIKA SocDaemon: Resumed GpuRc6Monitor polling for WLT Sustain/Bursty");
-                    }
-                } else if (newWLT == WltType::Idle || newWLT == WltType::Btl) {
-                    // Pause GPU monitor polling if running
-                    if (gpuMonitorThreadRunning_ && gpuRc6MonitorPtr_) {
-                        gpuRc6MonitorPtr_->pause();
-                        ALOGI("SocDaemon: Paused GpuRc6Monitor polling for WLT Idle/Btl");
-                    }
-                } */
-                
-
                 if (CCGlobalState_.load() == CCGlobalState::CoreContainment) {
                     // We're in CoreContainment
 
@@ -316,6 +286,7 @@ void SocDaemon::handleChangeAlert(const std::string& name, int oldValue, int new
                         case WltType::Btl:
                             // Idle/BTL -> ensure exit debounce is stopped
                             if (gpuMonitorThreadRunning_ && gpuRc6MonitorPtr_) {
+                                sendGfxHintIfAllowed(0, "WLT Idle/Btl - Low GPU load expected");
                                 gpuRc6MonitorPtr_->pause();
                                 ALOGI("SocDaemon: Paused GpuRc6Monitor polling for WLT Idle/Btl");
                                 }
@@ -355,6 +326,7 @@ void SocDaemon::handleChangeAlert(const std::string& name, int oldValue, int new
                                 ALOGI("SocDaemon: Open : WLT_IDLE/BTL : EntryDebounceTimer already running or not in Open");
                             }
                             if (gpuMonitorThreadRunning_ && gpuRc6MonitorPtr_) {
+                                sendGfxHintIfAllowed(0, "WLT Idle/Btl - Low GPU load expected");
                                 gpuRc6MonitorPtr_->pause();
                                 ALOGI("SocDaemon: Paused GpuRc6Monitor polling for WLT Idle/Btl");
                             }
@@ -460,7 +432,7 @@ void SocDaemon::sendGfxHintIfAllowed(int value, const char* reason) {
     if (value != gfxMode_) {
         if (sendGfxHint_) {
             hintManager.sendHint("GFX_MODE", value);
-                ALOGI("SocDaemon: Send GFX_MODE: %d due to %s", value, reason);
+            ALOGI("SocDaemon: Send GFX_MODE: %d due to %s", value, reason);
             } else {
                 ALOGI("SocDaemon: %s but not sending due to sendGfxHint=false", reason);
             }
